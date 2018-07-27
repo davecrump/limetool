@@ -47,8 +47,8 @@ int OVERSAMPLE = 16;
 #define FIFO_SIZE (1024 * 1000)
 
 
-int limesdr_init() {
-
+int limesdr_init(int TxOutputSel) 
+{
 	if (m_running == true) return 0;
 
 	int n;
@@ -80,8 +80,8 @@ int limesdr_init() {
 	if (LMS_EnableChannel(device, LMS_CH_TX, 0, false) != 0) //Not enable
 		return -1;
 
-	//if (LMS_SetAntenna(device, LMS_CH_TX, 0, 1) != 0)
-	if (LMS_SetAntenna(device, LMS_CH_TX, 0, 2) != 0)  // Set antenna for Lime Mini
+                                                                     // set antenna to 1 for > 2 GHz
+	if (LMS_SetAntenna(device, LMS_CH_TX, 0, TxOutputSel) != 0)  // set antenna to 2 for < 2 GHz
 		return -1;
 
 	streamId.channel = 0;
@@ -91,9 +91,7 @@ int limesdr_init() {
 	streamId.dataFmt = LMS_FMT_I16;
 
 	//int res = LMS_SetupStream(device, &streamId);
-	LMS_SetupStream(device, &streamId);
-
-
+  LMS_SetupStream(device, &streamId);
 
 	m_running = true;
 
@@ -102,7 +100,6 @@ int limesdr_init() {
 	if (LMS_EnableChannel(device, LMS_CH_RX, 0, true) != 0)
 		return -1;
 	if (LMS_SetAntenna(device, LMS_CH_RX, 0, 1) != 0)
-	// if (LMS_SetAntenna(device, LMS_CH_RX, 0, 2) != 0)  // Set antenna for Lime Mini?
 		return -1;
 
 	streamIdRx.channel = 0;
@@ -112,7 +109,7 @@ int limesdr_init() {
 	streamIdRx.dataFmt = LMS_FMT_I16;
 
 	//res = LMS_SetupStream(device, &streamIdRx);
-	LMS_SetupStream(device, &streamIdRx);
+  LMS_SetupStream(device, &streamIdRx);
 
 	return 0;
 }
@@ -398,7 +395,7 @@ int SendToOutput(scmplx *BufferRx, int len)
 		fwrite(&SymbI, 1, 1, output);
 		fwrite(&SymbQ, 1, 1, output);
 	}
-	return 0;
+  return 0;
 }
 
 static bool keep_running=false;
@@ -448,8 +445,11 @@ int main(int argc, char **argv)
 	int Gain = 50;
 	int a;
 	int anyargs = 0;
+  int TxOutputSel = 2;
     enum {TYPE_I16,TYPE_FLOAT};
     int TypeInput = TYPE_I16;
+   char *ptr;
+
 	while (1)
 	{
 		a = getopt(argc, argv, "i:o:s:f:g:ht:");
@@ -483,8 +483,8 @@ int main(int argc, char **argv)
 		case 's': // SymbolRate in KS
 			SymbolRate = atol(optarg) * 1000;
 			break;
-		case 'f': // TxFrequency in Khz
-			TxFrequency = atol(optarg)*1000;
+		case 'f': // TxFrequency in KHz (1KHz is lowest resolution supported here)
+			TxFrequency = strtoul(optarg, &ptr, 10) * 1000;
 			break;
 		case 'g': // Gain 0..100
 			Gain = atoi(optarg);
@@ -536,13 +536,18 @@ int main(int argc, char **argv)
     if (signal(SIGPIPE, signal_handler) == SIG_ERR)
         fputs("Warning: Can not install signal handler for SIGPIPE\n", stderr);
 
+  if(TxFrequency > 2000000000)
+  {
+    TxOutputSel = 1; // For f > 2 GHz
+  }
+
     #define BUFFER_SIZE 1000
     scmplx BufferIQ[BUFFER_SIZE];
 
 	scmplx BufferIQRx[BUFFER_SIZE];
     float fBufferIQ[BUFFER_SIZE*2];
 
-    limesdr_init();
+    limesdr_init(TxOutputSel);
     limesdr_set_sr(SymbolRate,0);
     limesdr_set_freq(TxFrequency);
 	limesdr_stoptx();
